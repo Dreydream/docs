@@ -34,15 +34,7 @@ The following fields are included in the signature for each step:
 - **Environment variables defined in the pipeline YAML.** Environment variables set by the agent, hooks, or the user's shell are not signed and can override the environment a step's command is started with.
 - **Plugins and plugin configuration.**
 - **Matrix configuration.** The matrix configuration is signed as a whole rather than each individual matrix job. This means the signature is the same for each job in the matrix. When signatures are verified for matrix jobs, the agent double-checks that the job it received is a valid construction of the matrix and that the signature matches the matrix configuration.
-- **The step key.** If there is a step key present. [WIP]
-
-Additionally, the following aspects of the build for each job are included in the signature:
-
-- The pipeline's UUID [WIP]
-- The organization UUID [WIP]
-- The build number [WIP]
-- The repo the build is running for [WIP]
-- The commit the build is running for [WIP]
+- **The repo the commands are running in.** This prevents you from copying a signed step from one repo to another.
 
 ## Enabling signed pipelines on your agents
 
@@ -104,9 +96,9 @@ buildkite-agent tool keygen --help
 Next, you need to configure your agents to use the keys you generated. On agents that upload pipelines, add the following to the agent's config file:
 
 ```ini
-job-signing-jwks-path=<path to private keyset>
-job-signing-key-id=<the key id you generated earlier>
-job-verification-jwks-path=<path to public keyset>
+signing-jwks-file=<path to private keyset>
+signing-jwks-key-id=<the key id you generated earlier>
+verification-jwks-file=<path to public keyset>
 ```
 
 This ensures that whenever those agents upload steps to Buildkite, they'll generate signatures using the private key you generated earlier. It also ensures that those agents verify the signatures of any steps they run, using the public key.
@@ -114,7 +106,7 @@ This ensures that whenever those agents upload steps to Buildkite, they'll gener
 On instances that verify jobs, add:
 
 ```ini
-job-verification-jwks-path=<path to verification keys>
+verification-jwks-file=<path to verification keys>
 ```
 
 ### 3. Sign all steps
@@ -124,31 +116,24 @@ So far, you've configured agents to sign and verify any steps they upload and ru
 > 🚧 Non-YAML steps
 > You must use YAML to sign steps configured in the Buildkite dashboard. If you don't use YAML, you'll need to [migrate to YAML steps](/docs/tutorials/pipeline_upgrade) before continuing.
 
-To sign steps configured in the Buildkite dashboard, you need to add static signatures to the YAML:
-
-1. Copy the existing YAML steps definition from the editor in the Buildkite dashboard.
-1. Paste the step definitions into a file on your machine.
-1. Generate a new YAML definition with signatures by running:
-
-    ```sh
-    buildkite-agent pipeline upload --jwks-file-path <path-to-private-keys> --signing-key-id <key-id> --dry-run --format yaml <path-to-pipeline-file>
-    ```
-
-    Replacing the following:
-    * `<path-to-private-keys>` with the path to your private keys.
-    * `<key-id>` with the key ID.
-    * `<path-to-pipeline-file>` with the path to the step definitions you saved from the Buildkite dashboard.
-
-    This outputs the pipeline YAML with the signatures added to the steps.
-
-1. Copy the updated step definitions back into the editor in the Buildkite dashboard.
-1. Save the new definition.
-
-For example, if you had a file called `pipeline.yaml` in the current directory, and you wanted to sign it with the key generated earlier, you'd run:
-
-```bash
-buildkite-agent pipeline upload --jwks-file-path /path/to/private/key.json --signing-key-id my-key-id --dry-run --format yaml pipeline.yaml
+To sign steps configured in the Buildkite dashboard, you need to add static signatures to the YAML. To do this, run:
+```Bash
+buildkite-agent tool sign \
+  --graphql-token <token> \
+  --jwks-file <path to signing jwks> \
+  --jwks-key-id <signing key id> \
+  --organization-slug <org slug> \
+  --pipeline-slug <pipeline slug> \
+  --update
 ```
+making the following replacements:
+- `<token>` with a Buildkite GraphQL token that has the `write_pipelines` scope.
+- `<path to signing jwks>` with the path to the private keyset you generated earlier.
+- `<signing key id>` with the key ID from earlier
+- `<org slug>` with the slug of the organization the pipeline is in.
+- `<pipeline slug>` with the slug of the pipeline you want to sign
+
+This will download the pipeline definition using the Buildkite GraphQL API, sign all steps, and upload the signed pipeline definition back to Buildkite.
 
 ## Rotating signing keys
 
